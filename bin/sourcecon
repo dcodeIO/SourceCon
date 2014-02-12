@@ -1,0 +1,161 @@
+#!/usr/bin/env node
+/*
+ Copyright 2013 Daniel Wirtz <dcode@dcode.io>
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+ http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ */
+
+/**
+ * SourceCon Command Line Utility (c) 2013 Daniel Wirtz <dcode@dcode.io>
+ * Released under the Apache License, Version 2.0
+ * see: https://github.com/dcodeIO/SourceCon for details
+ */
+
+var SourceCon = require("../src/SourceCon.js"),
+    keypress = require("keypress"),
+    colour = require("colour"),
+    fs = require("fs");
+
+// Enable raw stdin
+process.stdin.setRawMode(true);
+process.stdin.resume();
+keypress(process.stdin);
+
+// Provide global exit hooks
+process.stdin.on("keypress", function(ch, key) {
+    // Ctrl+C/D
+    if (key && key.ctrl && (key.name === 'c' || key.name === 'd')) {
+        process.stdout.write("\n\nGood bye.".cyan+"\n");
+        process.exit(0);
+    }
+});
+
+// Reads a single input line
+function readline(cb, defaultVal) {
+    var line = defaultVal || "",
+        listener;
+    process.stdin.on("keypress", listener = function(ch, key) {
+        // Backspace
+        if (key && key.name === 'backspace') {
+            if (line.length == 0) return;
+            line = line.substring(0, line.length-1);
+            process.stdout.write(ch);
+            process.stdout.write("\033[K"); // Clear to end of line
+            return;
+        }
+        // RETURN
+        if (key && key.name === 'return') {
+            if (line.length == 0) return;
+            process.stdin.removeListener("keypress", listener);
+            process.stdout.write("\n");
+            cb(line);
+            return;
+        }
+        // Anything else
+        if (typeof ch === 'string' && ch.length > 0) {
+            process.stdout.write(ch);
+            line += ch;
+        }
+    });
+}
+
+var config = {};
+try {
+    config = JSON.parse(fs.readFileSync("sourcecon.json")+"");
+} catch (e) {}
+config.host = config.host || "";
+config.port = config.port || "";
+config.pass = config.pass || "";
+
+process.nextTick(function() {
+    process.stdout.write("Host> ".cyan+config.host);
+    readline(function(host) {
+        config.host = host;
+        process.stdout.write("Port> ".cyan+config.port);
+        readline(function(port) {
+            config.port = parseInt(port, 10);
+            process.stdout.write("Pass> ".cyan+config.pass);
+            readline(function(pass) {
+                config.pass = pass;
+                console.log("");
+                fs.writeFileSync("sourcecon.json", JSON.stringify(config, null, 4));
+                runConsole();
+            }, config.pass);
+        }, config.port);
+    }, config.host);
+});
+
+function runConsole() {   
+    var con = new SourceCon(config.host, config.port);
+    // con.debug = true;
+    console.log(("Connecting to "+config.host+":"+config.port+" ...").cyan);
+    con.connect(function(err) {
+        if (!err) {
+            con.auth(config.pass, function(err) {
+                if (err) {
+                    console.log("Authentication failed.");
+                    return;
+                }
+                var promptShowing = false;
+                con.on("message", function(msg) {
+                    if (msg.id === 0) {
+                        var lines = msg.body.toString("ascii").split(/\r?\n/);
+                        for (var i=0; i<lines.length; i++) {
+                            lines[i] = "< ".yellow+lines[i];
+                        }
+                        if (promptShowing) {
+                            process.stdout.write("\033[2K\033["+(buf.length+2)+"D");
+                        }
+                        console.log(lines.join("\n"));
+                        if (promptShowing) {
+                            process.stdout.write("> ".cyan+buf);
+                        }
+                    }
+                });
+                var last = "",
+                    buf = "";
+                process.stdin.on("keypress", function(ch, key) {                
+                    // Backspace
+                    if (key && key.name === 'backspace') {
+                        if (buf.length == 0) return;
+                        buf = buf.substring(0, buf.length-1);
+                        process.stdout.write(ch);
+                        process.stdout.write("\033[K"); // Clear to end of line
+                        return;
+                    }
+                    // RETURN
+                    if (key && key.name === 'return') {
+                        if (buf.length == 0) return;
+                        process.stdout.write("\n");
+                        promptShowing = false;
+                        buf = buf.trim();
+                        con.send(buf, function(err, res) {
+                            console.log(res.toString("ascii").white.bold);
+                            process.stdout.write("> ".cyan);
+                            promptShowing = true;
+                        });
+                        buf = "";
+                        return;
+                    }
+                    // Anything else
+                    if (typeof ch === 'string' && ch.length > 0) {
+                        process.stdout.write(ch);
+                        buf += ch;
+                    }                
+                });
+                process.stdout.write("> ".cyan);
+                promptShowing = true;
+            });
+        }
+    });
+}

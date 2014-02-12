@@ -1,0 +1,25 @@
+{
+    "name": "sourcecon",
+    "version": "0.1.0",
+    "description": "Simple SRCDS RCON for node.js",
+    "author": "Daniel Wirtz <dcode@dcode.io>",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/dcodeIO/SourceCon.git"
+    },
+    "bugs": {
+        "url": "https://github.com/dcodeIO/SourceCon/issues"
+    },
+    "main": "./index.js",
+    "bin": {
+        "sourcecon": "./bin/sourcecon"
+    },
+    "dependencies": {
+        "keypress": "~0.2",
+        "colour": "~0.7"
+    },
+    "license": "Apache-2.0",
+    "engines": {
+        "node": ">=0.8"
+    }
+}
