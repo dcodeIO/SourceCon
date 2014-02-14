@@ -1,6 +1,6 @@
 {
     "name": "sourcecon",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Simple SRCDS RCON for node.js",
     "author": "Daniel Wirtz <dcode@dcode.io>",
     "repository": {

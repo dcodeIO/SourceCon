@@ -21,7 +21,7 @@
  */
 
 var net = require("net"),
-	events = require("events");
+    events = require("events");
 
 // Event      | Arguments        |
 // -----------|------------------|
@@ -37,37 +37,37 @@ var net = require("net"),
  * @extends events.EventEmitter
  */
 var SourceCon = function(host, port) {
-	events.EventEmitter.call(this);
+    events.EventEmitter.call(this);
 
-	/**
-	 * Server hostname.
-	 * @type {string}
-	 */
-	this.host = host;
+    /**
+     * Server hostname.
+     * @type {string}
+     */
+    this.host = host;
 
-	/**
-	 * Server RCON port.
-	 * @type {number}
-	 */
-	this.port = port;
+    /**
+     * Server RCON port.
+     * @type {number}
+     */
+    this.port = port;
 
-	/**
-	 * Next packet id.
-	 * @type {number}
-	 */
-	this.packetId = 1;
+    /**
+     * Next packet id.
+     * @type {number}
+     */
+    this.packetId = 1;
 
-	/**
-	 * Callback store.
-	 * @type {Object.<number,Object>}
-	 */
-	this.callbackStore = {};
+    /**
+     * Callback store.
+     * @type {Object.<number,Object>}
+     */
+    this.callbackStore = {};
 
-	/**
-	 * RCON connection.
-	 * @type {net.Socket}
-	 */
-	this.socket = null;
+    /**
+     * RCON connection.
+     * @type {net.Socket}
+     */
+    this.socket = null;
 
     /**
      * Receive buffer.
@@ -86,7 +86,7 @@ var SourceCon = function(host, port) {
 SourceCon.prototype = Object.create(events.EventEmitter.prototype);
 
 // Packet types
-SourceCon.SERVERDATA_AUTH 		    = 3; // Client->Server
+SourceCon.SERVERDATA_AUTH             = 3; // Client->Server
 SourceCon.SERVERDATA_AUTH_RESPONSE  = 2; // Server->Client
 SourceCon.SERVERDATA_EXECCOMMAND    = 2; // Client->Server
 SourceCon.SERVERDATA_RESPONSE_VALUE = 0; // Server->Client
@@ -95,33 +95,43 @@ SourceCon.SERVERDATA_RESPONSE_VALUE = 0; // Server->Client
 /**
  * Connects to the server.
  * @param {function(Error)=} cb Callback
+ * @returns {boolean} `true` if now connecting, `false` if already connecting or connected
  */
 SourceCon.prototype.connect = function(cb) {
-	var socket = new net.Socket();
-	socket.on("error", function(err) {
-		if (cb) cb(err);
+    if (this.socket) return false;
+    this.socket = new net.Socket();
+    this.socket.on("error", function(err) {
+        if (cb) cb(err);
         this.emit("error", err);
-	}.bind(this));
-	socket.on("end", function() {
-		if (socket === this.socket) {
-			this.socket = null;
-            this.emit("disconnect");
-        }
-	}.bind(this));
-	socket.connect(this.port, this.host, function() {
-		socket.on("data", function(data) {
+        this.disconnect();
+    }.bind(this));
+    this.socket.on("end", function() {
+        this.disconnect();
+    }.bind(this));
+    this.socket.connect(this.port, this.host, function() {
+        this.socket.on("data", function(data) {
             // Collect all incoming chunks
             this.buffer = Buffer.concat([this.buffer, data]);
-            // And process what we have soon as enough data is available
-			this._process();
-		}.bind(this));
-		this.socket = socket;
-		if (cb) {
-			var _cb = cb; cb = null;
-			_cb(null);
-		}
-		this.emit("connect");
-	}.bind(this));
+            // And process what we have as soon as enough data is available
+            this._process();
+        }.bind(this));
+        if (cb) cb(null);
+        this.emit("connect");
+    }.bind(this));
+    return true;
+};
+
+/**
+ * Disconnects from the server.
+ * @returns {boolean} `true` if disconnected, `false` if already disconnected
+ */
+SourceCon.prototype.disconnect = function() {
+    if (!this.socket) return false;
+    this.socket.removeAllListeners();
+    this.socket.end();
+    this.socket = null;
+    this.emit("disconnect");
+    return true;
 };
 
 /**
@@ -206,41 +216,43 @@ function pack(id, type, body) {
 
 /**
  * Sends a command to the server.
- * @param {string} cmd Command to execute
- * @param {number|function(Error, Object=)} type Message type (omittable)
- * @param {function(Error, Object=)=} cb Callback
+ * @param {!Buffer|string} cmd Command to execute
+ * @param {number|function(Error, Buffer=)} type Message type (omittable)
+ * @param {function(Error, Buffer=)=} cb Callback
  */
 SourceCon.prototype.send = function(cmd, type, cb) {
-	if (typeof type !== 'number') {
-		cb = type;
-		type = SourceCon.SERVERDATA_EXECCOMMAND;
-	}
-	if (!this.socket) {
-		process.nextTick(function() {
-			var err = new Error("Not connected");
-			cb(err);
-			this.emit("error", err);
-		});
-		return;
-	}
-    var body = new Buffer(cmd, "ascii"),
-        req = pack(this.packetId, type, body),
+    if (typeof type !== 'number') {
+        cb = type;
+        type = SourceCon.SERVERDATA_EXECCOMMAND;
+    }
+    if (!this.socket) {
+        process.nextTick(function() {
+            var err = new Error("Not connected");
+            cb(err);
+            this.emit("error", err);
+        });
+        return;
+    }
+    if (!Buffer.isBuffer(cmd)) {
+        cmd = new Buffer(cmd, "ascii");
+    }
+    var req = pack(this.packetId, type, cmd),
         next_id = nextId(this.packetId);
-	if (cb) {
-		this.callbackStore[this.packetId] = { // Actual request
+    if (cb) {
+        this.callbackStore[this.packetId] = { // Actual request
             cb: cb,
             id: this.packetId,
             type: type,
             buffer: new Buffer(0)
         };
-	}
+    }
     this.callbackStore[next_id] = { // Pseudo SRV
         finId: this.packetId
     };
     if (this.debug)
-	    console.log("<<< size="+(req.length-4)+", id="+this.packetId+", type="+type+" : "+body.toString("ascii"));
+        console.log("<<< size="+(req.length-4)+", id="+this.packetId+", type="+type+" : "+cmd.toString("ascii"));
     // Write the actual request
-	this.socket.write(req);
+    this.socket.write(req);
     this.packetId = nextId(this.packetId);
     
     // Write an empty SRV to reliably find the end of the previous response
@@ -256,7 +268,7 @@ SourceCon.prototype.send = function(cmd, type, cb) {
  * @param {function(Error)=} cb Callback
  */
 SourceCon.prototype.auth = function(pass, cb) {
-	this.send(pass, SourceCon.SERVERDATA_AUTH, function(err, data) {
+    this.send(pass, SourceCon.SERVERDATA_AUTH, function(err, data) {
         this.emit("auth");
         cb(err, data);
     }.bind(this));

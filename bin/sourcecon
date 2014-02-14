@@ -98,7 +98,17 @@ process.nextTick(function() {
 function runConsole() {   
     var con = new SourceCon(config.host, config.port);
     // con.debug = true;
-    console.log(("Connecting to "+config.host+":"+config.port+" ...").cyan);
+    console.log("Connecting to "+config.host+":"+config.port+" ...");
+    con.on("connect", function() {
+        console.log("Connected. Type \"exit\" to quit.");
+    });
+    con.on("disconnect", function() {
+        console.log("Disconnected.");
+        process.exit(0);
+    });
+    con.on("error", function(err) {
+        console.log("Error: "+err.message);
+    });
     con.connect(function(err) {
         if (!err) {
             con.auth(config.pass, function(err) {
@@ -139,6 +149,10 @@ function runConsole() {
                         process.stdout.write("\n");
                         promptShowing = false;
                         buf = buf.trim();
+                        if (buf == "exit") {
+                            con.disconnect();
+                            return;
+                        }
                         con.send(buf, function(err, res) {
                             console.log(res.toString("ascii").white.bold);
                             process.stdout.write("> ".cyan);
